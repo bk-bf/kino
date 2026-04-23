@@ -122,6 +122,8 @@ func (l *Launcher) execPlayer(player PlayerDef, url string, offsetSecs int, subU
 
 	args = append(args, url)
 
+	cmdLine := player.Binary + " " + strings.Join(args, " ")
+	l.logger.Info("mpv command line", "cmd", cmdLine)
 	l.logger.Debug("executing player", "binary", player.Binary, "args", args)
 	cmd := exec.Command(player.Binary, args...)
 	return cmd.Start()
@@ -157,6 +159,8 @@ func (l *Launcher) launchConfigured(url string, offsetSecs int, subURLs []string
 
 	args = append(args, url)
 
+	cmdLine := l.command + " " + strings.Join(args, " ")
+	l.logger.Info("player command line", "cmd", cmdLine)
 	l.logger.Debug("launching configured player", "command", l.command, "args", args)
 
 	// On macOS, try 'open -a' if command not in PATH (for GUI apps)

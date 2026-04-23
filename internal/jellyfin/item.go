@@ -116,7 +116,7 @@ type ExternalSubtitleStream struct {
 }
 
 // codecToSubtitleFormat maps Jellyfin MediaStream codec to the subtitle format
-// expected by the Jellyfin subtitle stream endpoint.
+// expected by the Jellyfin subtitle stream endpoint and by mpv.
 func codecToSubtitleFormat(codec string) string {
 	switch strings.ToLower(codec) {
 	case "subrip":
@@ -134,8 +134,45 @@ func codecToSubtitleFormat(codec string) string {
 	}
 }
 
+// validSubtitleExts lists extensions mpv recognizes for text subtitles.
+var validSubtitleExts = []string{"srt", "ass", "ssa", "vtt"}
+
+// hasValidSubtitleExt reports whether a URL/path ends with a known subtitle
+// extension, optionally followed by a query string.
+func hasValidSubtitleExt(url string) bool {
+	lower := strings.ToLower(url)
+	for _, ext := range validSubtitleExts {
+		if strings.HasSuffix(lower, "."+ext) {
+			return true
+		}
+		if strings.Contains(lower, "."+ext+"?") {
+			return true
+		}
+	}
+	return false
+}
+
+// rewriteSubtitleExt replaces the file extension in a Jellyfin subtitle URL
+// with the canonical one derived from the codec.
+func rewriteSubtitleExt(urlPath, codec string) string {
+	format := codecToSubtitleFormat(codec)
+	// Strip any existing extension before ?
+	qIdx := strings.Index(urlPath, "?")
+	pathPart := urlPath
+	queryPart := ""
+	if qIdx >= 0 {
+		pathPart = urlPath[:qIdx]
+		queryPart = urlPath[qIdx:]
+	}
+	// Remove trailing extension if present
+	lastDot := strings.LastIndex(pathPart, ".")
+	if lastDot > strings.LastIndex(pathPart, "/") {
+		pathPart = pathPart[:lastDot]
+	}
+	return pathPart + "." + format + queryPart
+}
+
 // GetExternalSubtitleStreams returns all external subtitle streams for an item.
-// It prefers the DeliveryUrl provided by Jellyfin's API when available.
 func GetExternalSubtitleStreams(item Item) []ExternalSubtitleStream {
 	var subtitles []ExternalSubtitleStream
 	streams := item.GetMediaStreams()
@@ -156,7 +193,7 @@ func GetExternalSubtitleStreams(item Item) []ExternalSubtitleStream {
 			subtitle.Title = fmt.Sprintf("External %d", stream.GetIndex())
 		}
 
-		// Prefer DeliveryUrl from Jellyfin API (includes correct path + ApiKey)
+		// Prefer DeliveryUrl from Jellyfin API
 		if stream.HasDeliveryUrl() && stream.GetDeliveryUrl() != "" {
 			subtitle.URL = stream.GetDeliveryUrl()
 		} else {
@@ -168,6 +205,55 @@ func GetExternalSubtitleStreams(item Item) []ExternalSubtitleStream {
 			format := codecToSubtitleFormat(stream.GetCodec())
 			subtitle.URL = fmt.Sprintf("/Videos/%s/%s/Subtitles/%d/0/Stream.%s",
 				item.GetId(), mediaSourceID, stream.GetIndex(), format)
+		}
+
+		// mpv doesn't understand extensions like ".subrip" — ensure canonical ext
+		if !hasValidSubtitleExt(subtitle.URL) {
+			subtitle.URL = rewriteSubtitleExt(subtitle.URL, stream.GetCodec())
+		}
+
+		subtitles = append(subtitles, subtitle)
+	}
+	return subtitles
+}
+
+// GetExternalSubtitleStreamsFromPlaybackInfo extracts subtitles from a
+// PlaybackInfoResponse which has properly resolved DeliveryUrls.
+func GetExternalSubtitleStreamsFromPlaybackInfo(info *api.PlaybackInfoResponse, itemID string) []ExternalSubtitleStream {
+	var subtitles []ExternalSubtitleStream
+
+	sources := info.GetMediaSources()
+	if len(sources) == 0 {
+		return subtitles
+	}
+
+	for _, stream := range sources[0].MediaStreams {
+		if stream.GetType() != "Subtitle" || !stream.GetIsExternal() {
+			continue
+		}
+
+		subtitle := ExternalSubtitleStream{}
+
+		if lang, ok := stream.GetLanguageOk(); ok && lang != nil {
+			subtitle.Language = *lang
+		}
+		if title, ok := stream.GetDisplayTitleOk(); ok && title != nil {
+			subtitle.Title = *title
+		} else {
+			subtitle.Title = fmt.Sprintf("External %d", stream.GetIndex())
+		}
+
+		if stream.HasDeliveryUrl() && stream.GetDeliveryUrl() != "" {
+			subtitle.URL = stream.GetDeliveryUrl()
+		} else {
+			format := codecToSubtitleFormat(stream.GetCodec())
+			subtitle.URL = fmt.Sprintf("/Videos/%s/%s/Subtitles/%d/0/Stream.%s",
+				itemID, sources[0].GetId(), stream.GetIndex(), format)
+		}
+
+		// mpv doesn't understand extensions like ".subrip"
+		if !hasValidSubtitleExt(subtitle.URL) {
+			subtitle.URL = rewriteSubtitleExt(subtitle.URL, stream.GetCodec())
 		}
 
 		subtitles = append(subtitles, subtitle)

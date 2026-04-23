@@ -5,6 +5,7 @@ package jellyfinSvc
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"github.com/bk-bf/kino/internal/domain"
@@ -70,20 +71,29 @@ func (c *Client) ResolvePlayableURL(ctx context.Context, itemID string) (string,
 }
 
 func (c *Client) GetSubtitleURLs(ctx context.Context, itemID string) ([]string, error) {
-	item, err := c.jf.GetItemWithMediaStreams(ctx, itemID)
+	// Use PlaybackInfo API — it returns properly resolved DeliveryUrls for playback.
+	info, err := c.jf.GetPlaybackInfo(ctx, itemID)
 	if err != nil {
-		return nil, err
+		slog.Error("GetPlaybackInfo failed, falling back to GetItems", "itemID", itemID, "error", err)
+		item, err2 := c.jf.GetItemWithMediaStreams(ctx, itemID)
+		if err2 != nil {
+			return nil, err2
+		}
+		subtitles := jellyfin.GetExternalSubtitleStreams(item)
+		return c.buildSubtitleURLs(subtitles), nil
 	}
 
-	subtitles := jellyfin.GetExternalSubtitleStreams(item)
+	subtitles := jellyfin.GetExternalSubtitleStreamsFromPlaybackInfo(info, itemID)
+	return c.buildSubtitleURLs(subtitles), nil
+}
+
+func (c *Client) buildSubtitleURLs(subtitles []jellyfin.ExternalSubtitleStream) []string {
 	urls := make([]string, 0, len(subtitles))
 	for _, sub := range subtitles {
 		url := sub.URL
 		if !strings.HasPrefix(url, "http") {
-			// Relative path — prepend host
 			url = c.jf.Host + url
 		}
-		// Add api_key if not already present in URL
 		if !strings.Contains(url, "api_key=") && !strings.Contains(url, "ApiKey=") {
 			sep := "?"
 			if strings.Contains(url, "?") {
@@ -91,9 +101,10 @@ func (c *Client) GetSubtitleURLs(ctx context.Context, itemID string) ([]string, 
 			}
 			url = fmt.Sprintf("%s%sapi_key=%s", url, sep, c.jf.Token)
 		}
+		slog.Info("subtitle URL", "title", sub.Title, "language", sub.Language, "url", url)
 		urls = append(urls, url)
 	}
-	return urls, nil
+	return urls
 }
 
 func (c *Client) MarkPlayed(ctx context.Context, itemID string) error {

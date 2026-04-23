@@ -201,6 +201,18 @@ func (c *Client) MarkUnplayedByID(ctx context.Context, itemID string) error {
 	return err
 }
 
+// GetPlaybackInfo fetches playback info for an item which includes properly
+// resolved MediaSources with MediaStreams and DeliveryUrls.
+func (c *Client) GetPlaybackInfo(ctx context.Context, itemID string) (*api.PlaybackInfoResponse, error) {
+	res, _, err := c.api.MediaInfoAPI.GetPlaybackInfo(ctx, itemID).
+		UserId(c.UserID).
+		Execute()
+	if err != nil {
+		return nil, err
+	}
+	return res, nil
+}
+
 // GetItemWithMediaStreams fetches a single item including its media streams and sources.
 func (c *Client) GetItemWithMediaStreams(ctx context.Context, itemID string) (Item, error) {
 	res, _, err := c.api.ItemsAPI.GetItems(ctx).
