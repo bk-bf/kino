@@ -69,6 +69,7 @@ func (s *Service) SyncLibrary(
 		if err != nil {
 			return domain.SyncResult{}, err
 		}
+		s.applySeasonCounts(ctx, lib.ID, shows)
 		if err := s.store.SaveShows(lib.ID, shows, lib.UpdatedAt); err != nil {
 			s.logger.Error("failed to save shows", "error", err, "libID", lib.ID)
 		}
@@ -111,6 +112,7 @@ func (s *Service) FetchShows(
 	if err != nil {
 		return nil, err
 	}
+	s.applySeasonCounts(ctx, libID, shows)
 	if err := s.store.SaveShows(libID, shows, time.Now().Unix()); err != nil {
 		s.logger.Error("failed to save shows", "error", err, "libID", libID)
 	}
@@ -152,6 +154,15 @@ func (s *Service) FetchSeasons(ctx context.Context, libID, showID string) ([]*do
 	}
 	if err := s.store.SaveSeasons(libID, showID, seasons); err != nil {
 		s.logger.Error("failed to save seasons", "error", err, "showID", showID)
+	}
+	// Backfill SeasonCount on the show pointer so the list reflects the real count.
+	if shows, ok := s.store.GetShows(libID); ok {
+		for _, show := range shows {
+			if show.ID == showID {
+				show.SeasonCount = len(seasons)
+				break
+			}
+		}
 	}
 	s.logger.Debug("fetched seasons", "count", len(seasons), "showID", showID)
 	return seasons, nil
@@ -250,6 +261,21 @@ func (s *Service) fetchMixedWithProgress(
 		defaultChunkSize,
 		onProgress,
 	)
+}
+
+// applySeasonCounts fetches all season counts for a library in one API call and
+// populates SeasonCount on each show. Errors are logged but not fatal.
+func (s *Service) applySeasonCounts(ctx context.Context, libID string, shows []*domain.Show) {
+	counts, err := s.client.GetSeasonCountsByLibrary(ctx, libID)
+	if err != nil {
+		s.logger.Warn("failed to fetch season counts, counts may be inaccurate", "error", err, "libID", libID)
+		return
+	}
+	for _, show := range shows {
+		if n, ok := counts[show.ID]; ok {
+			show.SeasonCount = n
+		}
+	}
 }
 
 // fetchAll is a generic pagination helper.

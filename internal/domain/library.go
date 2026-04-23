@@ -11,4 +11,7 @@ type LibraryClient interface {
 	GetSeasons(ctx context.Context, showID string) ([]*Season, error)
 	GetEpisodes(ctx context.Context, seasonID string) ([]*MediaItem, error)
 	GetShowEpisodeCount(ctx context.Context, showID string) (int, error)
+	// GetSeasonCountsByLibrary returns a map of seriesID → season count for all
+	// series in the given library in a single API call.
+	GetSeasonCountsByLibrary(ctx context.Context, libID string) (map[string]int, error)
 }

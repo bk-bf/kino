@@ -53,6 +53,10 @@ func (c *Client) GetShowEpisodeCount(ctx context.Context, showID string) (int, e
 	return c.jf.GetShowEpisodeCount(ctx, showID)
 }
 
+func (c *Client) GetSeasonCountsByLibrary(ctx context.Context, libID string) (map[string]int, error) {
+	return c.jf.GetSeasonCountsByLibrary(ctx, libID)
+}
+
 // --------------------------------------------------------------------------
 // domain.PlaybackClient
 // --------------------------------------------------------------------------
@@ -62,6 +66,21 @@ func (c *Client) ResolvePlayableURL(ctx context.Context, itemID string) (string,
 		c.jf.Host, itemID, c.jf.Token)
 	// Wrap as EDL so MPV handles it correctly (same as jfsh pattern)
 	return fmt.Sprintf("edl://%%%d%%%s", len(url), url), nil
+}
+
+func (c *Client) GetSubtitleURLs(ctx context.Context, itemID string) ([]string, error) {
+	item, err := c.jf.GetItemWithMediaStreams(ctx, itemID)
+	if err != nil {
+		return nil, err
+	}
+
+	subtitles := jellyfin.GetExternalSubtitleStreams(item)
+	urls := make([]string, 0, len(subtitles))
+	for _, sub := range subtitles {
+		url := fmt.Sprintf("%s%s?api_key=%s", c.jf.Host, sub.Path, c.jf.Token)
+		urls = append(urls, url)
+	}
+	return urls, nil
 }
 
 func (c *Client) MarkPlayed(ctx context.Context, itemID string) error {

@@ -58,19 +58,19 @@ func NewLauncher(command string, args []string, seekFlag string, logger *slog.Lo
 }
 
 // Launch opens a media URL in the configured player or auto-detected player
-func (l *Launcher) Launch(url string, startOffset time.Duration) error {
+func (l *Launcher) Launch(url string, startOffset time.Duration, subURLs []string) error {
 	offsetSecs := int(startOffset.Seconds())
 
 	// Tier 1: User configured a specific player
 	if l.command != "" {
 		l.logger.Info("using configured player", "command", l.command)
-		return l.launchConfigured(url, offsetSecs)
+		return l.launchConfigured(url, offsetSecs, subURLs)
 	}
 
 	// Tier 2: Auto-detect known players
 	if player, found := l.detectPlayer(); found {
 		l.logger.Info("auto-detected player", "binary", player.Binary)
-		return l.execPlayer(player, url, offsetSecs)
+		return l.execPlayer(player, url, offsetSecs, subURLs)
 	}
 
 	// Tier 3: System default fallback (xdg-open/open)
@@ -103,7 +103,7 @@ func (l *Launcher) detectPlayer() (PlayerDef, bool) {
 }
 
 // execPlayer launches the detected player with optional seek offset
-func (l *Launcher) execPlayer(player PlayerDef, url string, offsetSecs int) error {
+func (l *Launcher) execPlayer(player PlayerDef, url string, offsetSecs int, subURLs []string) error {
 	args := []string{}
 
 	// Add seek flag if we have an offset and the player supports it
@@ -111,6 +111,11 @@ func (l *Launcher) execPlayer(player PlayerDef, url string, offsetSecs int) erro
 		formattedFlag := fmt.Sprintf(player.SeekFlag, offsetSecs)
 		// Split flags like "-ss 10" into separate args
 		args = append(args, strings.Fields(formattedFlag)...)
+	}
+
+	// Add external subtitle URLs for mpv-based players
+	if len(subURLs) > 0 && isMpvFamily(player.Binary) {
+		args = append(args, "--sub-files="+strings.Join(subURLs, ","))
 	}
 
 	args = append(args, url)
@@ -121,7 +126,7 @@ func (l *Launcher) execPlayer(player PlayerDef, url string, offsetSecs int) erro
 }
 
 // launchConfigured launches the media using the user-configured player
-func (l *Launcher) launchConfigured(url string, offsetSecs int) error {
+func (l *Launcher) launchConfigured(url string, offsetSecs int, subURLs []string) error {
 	args := append([]string{}, l.args...)
 
 	// Add seek offset: user-configured flag takes precedence, then table lookup
@@ -139,6 +144,11 @@ func (l *Launcher) launchConfigured(url string, offsetSecs int) error {
 			l.logger.Warn("cannot set start offset - unknown player, configure start_flag in config",
 				"command", l.command, "offset", offsetSecs)
 		}
+	}
+
+	// Add external subtitle URLs for mpv-based players
+	if len(subURLs) > 0 && isMpvFamily(l.command) {
+		args = append(args, "--sub-files="+strings.Join(subURLs, ","))
 	}
 
 	args = append(args, url)
@@ -169,6 +179,15 @@ func (l *Launcher) lookupSeekFlag(binary string) string {
 		}
 	}
 	return ""
+}
+
+// isMpvFamily returns true for players based on mpv (mpv, celluloid, haruna, iina)
+func isMpvFamily(binary string) bool {
+	switch binary {
+	case "mpv", "celluloid", "haruna", "iina":
+		return true
+	}
+	return false
 }
 
 // launchMacOSApp launches a macOS GUI app using 'open -a'
@@ -237,9 +256,16 @@ func (s *Service) playItem(ctx context.Context, item domain.MediaItem, offset ti
 		return err
 	}
 
-	s.logger.Info("launching playback", "title", item.Title, "itemID", item.ID, "offset", offset)
+	var subURLs []string
+	if subs, err := s.playback.GetSubtitleURLs(ctx, item.ID); err == nil {
+		subURLs = subs
+	} else {
+		s.logger.Error("failed to get subtitle URLs", "error", err, "itemID", item.ID)
+	}
 
-	return s.launcher.Launch(url, offset)
+	s.logger.Info("launching playback", "title", item.Title, "itemID", item.ID, "offset", offset, "subtitles", len(subURLs))
+
+	return s.launcher.Launch(url, offset, subURLs)
 }
 
 // MarkWatched marks an item as fully watched

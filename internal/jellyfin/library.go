@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/sj14/jellyfin-go/api"
 	"github.com/bk-bf/kino/internal/domain"
+	"github.com/sj14/jellyfin-go/api"
 )
 
 // GetLibraries returns the top-level media libraries for the current user.
@@ -79,6 +79,7 @@ func (c *Client) GetShows(ctx context.Context, libID string, offset, limit int) 
 			api.ITEMFIELDS_OVERVIEW,
 			api.ITEMFIELDS_SORT_NAME,
 			api.ITEMFIELDS_DATE_CREATED,
+			api.ITEMFIELDS_CHILD_COUNT,
 		}).
 		SortBy([]api.ItemSortBy{api.ITEMSORTBY_SORT_NAME}).
 		SortOrder([]api.SortOrder{api.SORTORDER_ASCENDING}).
@@ -108,6 +109,7 @@ func (c *Client) GetMixedContent(ctx context.Context, libID string, offset, limi
 			api.ITEMFIELDS_OVERVIEW,
 			api.ITEMFIELDS_SORT_NAME,
 			api.ITEMFIELDS_DATE_CREATED,
+			api.ITEMFIELDS_CHILD_COUNT,
 		}).
 		SortBy([]api.ItemSortBy{api.ITEMSORTBY_SORT_NAME}).
 		SortOrder([]api.SortOrder{api.SORTORDER_ASCENDING}).
@@ -197,6 +199,25 @@ func (c *Client) MarkPlayedByID(ctx context.Context, itemID string) error {
 func (c *Client) MarkUnplayedByID(ctx context.Context, itemID string) error {
 	_, _, err := c.api.PlaystateAPI.MarkUnplayedItem(ctx, itemID).Execute()
 	return err
+}
+
+// GetItemWithMediaStreams fetches a single item including its media streams and sources.
+func (c *Client) GetItemWithMediaStreams(ctx context.Context, itemID string) (Item, error) {
+	res, _, err := c.api.ItemsAPI.GetItems(ctx).
+		UserId(c.UserID).
+		Ids([]string{itemID}).
+		Fields([]api.ItemFields{
+			api.ITEMFIELDS_MEDIA_STREAMS,
+			api.ITEMFIELDS_MEDIA_SOURCES,
+		}).
+		Execute()
+	if err != nil {
+		return Item{}, err
+	}
+	if len(res.Items) == 0 {
+		return Item{}, fmt.Errorf("item not found: %s", itemID)
+	}
+	return res.Items[0], nil
 }
 
 // --------------------------------------------------------------------------
@@ -343,6 +364,26 @@ func (c *Client) RemoveFromPlaylist(ctx context.Context, playlistID string, item
 func (c *Client) DeletePlaylist(ctx context.Context, playlistID string) error {
 	_, err := c.api.LibraryAPI.DeleteItem(ctx, playlistID).Execute()
 	return err
+}
+
+// GetSeasonCountsByLibrary returns a map of seriesID → season count for all series
+// in the given library, fetched in a single API call.
+func (c *Client) GetSeasonCountsByLibrary(ctx context.Context, libID string) (map[string]int, error) {
+	res, _, err := c.api.ItemsAPI.GetItems(ctx).
+		UserId(c.UserID).
+		ParentId(libID).
+		IncludeItemTypes([]api.BaseItemKind{api.BASEITEMKIND_SEASON}).
+		Recursive(true).
+		Execute()
+	if err != nil {
+		return nil, err
+	}
+	counts := make(map[string]int, len(res.Items))
+	for _, it := range res.Items {
+		sid := it.GetSeriesId()
+		counts[sid]++
+	}
+	return counts, nil
 }
 
 // GetShowEpisodeCount returns the total number of episodes for a given series.

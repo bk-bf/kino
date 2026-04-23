@@ -158,7 +158,7 @@ func Play(client *jellyfin.Client, items []jellyfin.Item, index int) error {
 			// load external subtitles
 			subtitles := jellyfin.GetExternalSubtitleStreams(item)
 			for _, subtitle := range subtitles {
-				subtitleURL := client.Host + subtitle.Path
+				subtitleURL := fmt.Sprintf("%s%s?api_key=%s", client.Host, subtitle.Path, client.Token)
 				if err := mpv.addSubtitle(subtitleURL, subtitle.Title, subtitle.Language); err != nil {
 					logger.Error("failed to add subtitle", "err", err, "title", subtitle.Title, "language", subtitle.Language)
 				} else {

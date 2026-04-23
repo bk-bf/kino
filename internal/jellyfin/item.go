@@ -115,10 +115,27 @@ type ExternalSubtitleStream struct {
 	Path     string
 }
 
+func subtitleCodecToExt(codec string) string {
+	switch codec {
+	case "subrip":
+		return "srt"
+	case "":
+		return "srt"
+	default:
+		return codec
+	}
+}
+
 // GetExternalSubtitleStreams returns all external subtitle streams for an item
 func GetExternalSubtitleStreams(item Item) []ExternalSubtitleStream {
 	var subtitles []ExternalSubtitleStream
 	streams := item.GetMediaStreams()
+
+	mediaSourceID := item.GetId()
+	if sources, ok := item.GetMediaSourcesOk(); ok && len(sources) > 0 {
+		mediaSourceID = sources[0].GetId()
+	}
+
 	for _, stream := range streams {
 		if stream.GetType() == "Subtitle" && stream.GetIsExternal() {
 			index := stream.GetIndex()
@@ -131,7 +148,8 @@ func GetExternalSubtitleStreams(item Item) []ExternalSubtitleStream {
 			} else {
 				subtitle.Title = fmt.Sprintf("External %d", index)
 			}
-			subtitle.Path = fmt.Sprintf("/Videos/%s/%s/Subtitles/%d/0/Stream.srt", item.GetId(), item.GetId(), index)
+			ext := subtitleCodecToExt(stream.GetCodec())
+			subtitle.Path = fmt.Sprintf("/Videos/%s/%s/Subtitles/%d/0/Stream.%s", item.GetId(), mediaSourceID, index, ext)
 			subtitles = append(subtitles, subtitle)
 		}
 	}
