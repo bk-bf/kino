@@ -86,7 +86,7 @@ func main() {
 		log.SetOutput(io.Discard)
 	}
 
-	jfClient, previewCfg := config.Run(version, *cfgPath)
+	jfClient, previewCfg, subtitleCfg := config.Run(version, *cfgPath)
 	if jfClient == nil {
 		return
 	}
@@ -99,7 +99,7 @@ func main() {
 	playlistSvc := playlist.NewService(svcClient, memStore, nil)
 	searchSvc := search.NewService(memStore)
 
-	launcher := player.NewLauncher("mpv", nil, "", nil)
+	launcher := player.NewLauncher("mpv", subtitleCfg.SubtitleMpvArgs(), "", nil)
 	playerSvc := player.NewService(launcher, svcClient, nil)
 
 	uiConfig := internalcfg.DefaultUIConfig()

@@ -2,6 +2,7 @@
 package config
 
 import (
+	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -21,9 +22,26 @@ type PreviewConfig struct {
 	ShowBackdrop bool   `mapstructure:"show_backdrop"`
 }
 
+// SubtitleConfig holds subtitle appearance settings passed to mpv.
+type SubtitleConfig struct {
+	// Font family name, e.g. "Liberation Sans"
+	Font string `mapstructure:"font"`
+	// Font size in points (mpv default: 55)
+	FontSize int `mapstructure:"font_size"`
+	// Primary colour in RRGGBB hex (e.g. "FFFFFF" for white)
+	Color string `mapstructure:"color"`
+	// Border (outline) size in pixels (mpv default: 3)
+	BorderSize float64 `mapstructure:"border_size"`
+	// Shadow offset in pixels (mpv default: 0)
+	ShadowOffset float64 `mapstructure:"shadow_offset"`
+	// Bold text
+	Bold bool `mapstructure:"bold"`
+}
+
 // AppConfig is the fully parsed configuration.
 type AppConfig struct {
-	Preview PreviewConfig
+	Preview   PreviewConfig
+	Subtitles SubtitleConfig
 }
 
 // DefaultPreviewConfig returns sensible defaults.
@@ -35,6 +53,66 @@ func DefaultPreviewConfig() PreviewConfig {
 		DebounceMs:   80,
 		ShowBackdrop: false,
 	}
+}
+
+// DefaultSubtitleConfig returns mpv's built-in defaults (no overrides).
+func DefaultSubtitleConfig() SubtitleConfig {
+	return SubtitleConfig{
+		Font:         "",
+		FontSize:     0,
+		Color:        "",
+		BorderSize:   -1,
+		ShadowOffset: -1,
+		Bold:         false,
+	}
+}
+
+// ReadSubtitleConfig reads the subtitles sub-section from viper.
+func ReadSubtitleConfig() SubtitleConfig {
+	cfg := DefaultSubtitleConfig()
+	if viper.IsSet("subtitles.font") {
+		cfg.Font = viper.GetString("subtitles.font")
+	}
+	if viper.IsSet("subtitles.font_size") {
+		cfg.FontSize = viper.GetInt("subtitles.font_size")
+	}
+	if viper.IsSet("subtitles.color") {
+		cfg.Color = viper.GetString("subtitles.color")
+	}
+	if viper.IsSet("subtitles.border_size") {
+		cfg.BorderSize = viper.GetFloat64("subtitles.border_size")
+	}
+	if viper.IsSet("subtitles.shadow_offset") {
+		cfg.ShadowOffset = viper.GetFloat64("subtitles.shadow_offset")
+	}
+	if viper.IsSet("subtitles.bold") {
+		cfg.Bold = viper.GetBool("subtitles.bold")
+	}
+	return cfg
+}
+
+// SubtitleMpvArgs converts SubtitleConfig into mpv command-line flags.
+func (s SubtitleConfig) SubtitleMpvArgs() []string {
+	var args []string
+	if s.Font != "" {
+		args = append(args, "--sub-font="+s.Font)
+	}
+	if s.FontSize > 0 {
+		args = append(args, fmt.Sprintf("--sub-font-size=%d", s.FontSize))
+	}
+	if s.Color != "" {
+		args = append(args, "--sub-color=#"+s.Color)
+	}
+	if s.BorderSize >= 0 {
+		args = append(args, fmt.Sprintf("--sub-border-size=%.1f", s.BorderSize))
+	}
+	if s.ShadowOffset >= 0 {
+		args = append(args, fmt.Sprintf("--sub-shadow-offset=%.1f", s.ShadowOffset))
+	}
+	if s.Bold {
+		args = append(args, "--sub-bold=yes")
+	}
+	return args
 }
 
 // ReadPreviewConfig reads the preview sub-section from viper.
@@ -61,7 +139,7 @@ func ReadPreviewConfig() PreviewConfig {
 // Run initialises viper from the config file at path, prompts for missing
 // credentials via a small Bubbletea form, and returns a ready *jellyfin.Client.
 // Returns nil if the user quit the setup form.
-func Run(clientVersion, path string) (*jellyfin.Client, PreviewConfig) {
+func Run(clientVersion, path string) (*jellyfin.Client, PreviewConfig, SubtitleConfig) {
 	viper.SetConfigFile(path)
 	viper.SetConfigType("yaml")
 
@@ -124,6 +202,7 @@ func Run(clientVersion, path string) (*jellyfin.Client, PreviewConfig) {
 	}
 
 	previewCfg := ReadPreviewConfig()
+	subtitleCfg := ReadSubtitleConfig()
 
 	if host != "" && username != "" {
 		client, err := jellyfin.NewClient(host, username, password, device, deviceID, clientVersion, token, userID)
@@ -136,7 +215,7 @@ func Run(clientVersion, path string) (*jellyfin.Client, PreviewConfig) {
 					_ = viper.SafeWriteConfig()
 				}
 			}
-			return client, previewCfg
+			return client, previewCfg, subtitleCfg
 		}
 		slog.Error("failed to create client", "err", err)
 	}
@@ -148,7 +227,7 @@ func Run(clientVersion, path string) (*jellyfin.Client, PreviewConfig) {
 	}
 	sm := m.(setupModel)
 	if sm.client == nil {
-		return nil, previewCfg
+		return nil, previewCfg, subtitleCfg
 	}
-	return sm.client, previewCfg
+	return sm.client, previewCfg, subtitleCfg
 }
