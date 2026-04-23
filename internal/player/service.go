@@ -115,7 +115,9 @@ func (l *Launcher) execPlayer(player PlayerDef, url string, offsetSecs int, subU
 
 	// Add external subtitle URLs for mpv-based players
 	if len(subURLs) > 0 && isMpvFamily(player.Binary) {
-		args = append(args, "--sub-files="+strings.Join(subURLs, ","))
+		for _, subURL := range subURLs {
+			args = append(args, "--sub-file="+subURL)
+		}
 	}
 
 	args = append(args, url)
@@ -148,7 +150,9 @@ func (l *Launcher) launchConfigured(url string, offsetSecs int, subURLs []string
 
 	// Add external subtitle URLs for mpv-based players
 	if len(subURLs) > 0 && isMpvFamily(l.command) {
-		args = append(args, "--sub-files="+strings.Join(subURLs, ","))
+		for _, subURL := range subURLs {
+			args = append(args, "--sub-file="+subURL)
+		}
 	}
 
 	args = append(args, url)

@@ -5,6 +5,7 @@ package jellyfinSvc
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/bk-bf/kino/internal/domain"
 	"github.com/bk-bf/kino/internal/jellyfin"
@@ -77,7 +78,19 @@ func (c *Client) GetSubtitleURLs(ctx context.Context, itemID string) ([]string, 
 	subtitles := jellyfin.GetExternalSubtitleStreams(item)
 	urls := make([]string, 0, len(subtitles))
 	for _, sub := range subtitles {
-		url := fmt.Sprintf("%s%s?api_key=%s", c.jf.Host, sub.Path, c.jf.Token)
+		url := sub.URL
+		if !strings.HasPrefix(url, "http") {
+			// Relative path — prepend host
+			url = c.jf.Host + url
+		}
+		// Add api_key if not already present in URL
+		if !strings.Contains(url, "api_key=") && !strings.Contains(url, "ApiKey=") {
+			sep := "?"
+			if strings.Contains(url, "?") {
+				sep = "&"
+			}
+			url = fmt.Sprintf("%s%sapi_key=%s", url, sep, c.jf.Token)
+		}
 		urls = append(urls, url)
 	}
 	return urls, nil

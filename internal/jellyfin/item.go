@@ -112,46 +112,65 @@ func Watched(item Item) bool {
 type ExternalSubtitleStream struct {
 	Language string
 	Title    string
-	Path     string
+	URL      string // full or relative URL to the subtitle file
 }
 
-func subtitleCodecToExt(codec string) string {
-	switch codec {
+// codecToSubtitleFormat maps Jellyfin MediaStream codec to the subtitle format
+// expected by the Jellyfin subtitle stream endpoint.
+func codecToSubtitleFormat(codec string) string {
+	switch strings.ToLower(codec) {
 	case "subrip":
 		return "srt"
-	case "":
+	case "ass", "ssa":
+		return "ass"
+	case "webvtt", "vtt":
+		return "vtt"
+	case "srt":
 		return "srt"
+	case "":
+		return "srt" // best guess
 	default:
 		return codec
 	}
 }
 
-// GetExternalSubtitleStreams returns all external subtitle streams for an item
+// GetExternalSubtitleStreams returns all external subtitle streams for an item.
+// It prefers the DeliveryUrl provided by Jellyfin's API when available.
 func GetExternalSubtitleStreams(item Item) []ExternalSubtitleStream {
 	var subtitles []ExternalSubtitleStream
 	streams := item.GetMediaStreams()
 
-	mediaSourceID := item.GetId()
-	if sources, ok := item.GetMediaSourcesOk(); ok && len(sources) > 0 {
-		mediaSourceID = sources[0].GetId()
-	}
-
 	for _, stream := range streams {
-		if stream.GetType() == "Subtitle" && stream.GetIsExternal() {
-			index := stream.GetIndex()
-			subtitle := ExternalSubtitleStream{}
-			if lang, ok := stream.GetLanguageOk(); ok && lang != nil {
-				subtitle.Language = *lang
-			}
-			if title, ok := stream.GetDisplayTitleOk(); ok && title != nil {
-				subtitle.Title = *title
-			} else {
-				subtitle.Title = fmt.Sprintf("External %d", index)
-			}
-			ext := subtitleCodecToExt(stream.GetCodec())
-			subtitle.Path = fmt.Sprintf("/Videos/%s/%s/Subtitles/%d/0/Stream.%s", item.GetId(), mediaSourceID, index, ext)
-			subtitles = append(subtitles, subtitle)
+		if stream.GetType() != "Subtitle" || !stream.GetIsExternal() {
+			continue
 		}
+
+		subtitle := ExternalSubtitleStream{}
+
+		if lang, ok := stream.GetLanguageOk(); ok && lang != nil {
+			subtitle.Language = *lang
+		}
+		if title, ok := stream.GetDisplayTitleOk(); ok && title != nil {
+			subtitle.Title = *title
+		} else {
+			subtitle.Title = fmt.Sprintf("External %d", stream.GetIndex())
+		}
+
+		// Prefer DeliveryUrl from Jellyfin API (includes correct path + ApiKey)
+		if stream.HasDeliveryUrl() && stream.GetDeliveryUrl() != "" {
+			subtitle.URL = stream.GetDeliveryUrl()
+		} else {
+			// Fallback: construct path manually
+			mediaSourceID := item.GetId()
+			if sources, ok := item.GetMediaSourcesOk(); ok && len(sources) > 0 {
+				mediaSourceID = sources[0].GetId()
+			}
+			format := codecToSubtitleFormat(stream.GetCodec())
+			subtitle.URL = fmt.Sprintf("/Videos/%s/%s/Subtitles/%d/0/Stream.%s",
+				item.GetId(), mediaSourceID, stream.GetIndex(), format)
+		}
+
+		subtitles = append(subtitles, subtitle)
 	}
 	return subtitles
 }

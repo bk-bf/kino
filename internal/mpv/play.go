@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/bk-bf/kino/internal/jellyfin"
@@ -158,11 +159,21 @@ func Play(client *jellyfin.Client, items []jellyfin.Item, index int) error {
 			// load external subtitles
 			subtitles := jellyfin.GetExternalSubtitleStreams(item)
 			for _, subtitle := range subtitles {
-				subtitleURL := fmt.Sprintf("%s%s?api_key=%s", client.Host, subtitle.Path, client.Token)
+				subtitleURL := subtitle.URL
+				if !strings.HasPrefix(subtitleURL, "http") {
+					subtitleURL = client.Host + subtitleURL
+				}
+				if !strings.Contains(subtitleURL, "api_key=") && !strings.Contains(subtitleURL, "ApiKey=") {
+					sep := "?"
+					if strings.Contains(subtitleURL, "?") {
+						sep = "&"
+					}
+					subtitleURL = fmt.Sprintf("%s%sapi_key=%s", subtitleURL, sep, client.Token)
+				}
 				if err := mpv.addSubtitle(subtitleURL, subtitle.Title, subtitle.Language); err != nil {
 					logger.Error("failed to add subtitle", "err", err, "title", subtitle.Title, "language", subtitle.Language)
 				} else {
-					logger.Info("added subtitle", "title", subtitle.Title, "language", subtitle.Language)
+					logger.Info("added subtitle", "title", subtitle.Title, "language", subtitle.Language, "url", subtitleURL)
 				}
 			}
 
