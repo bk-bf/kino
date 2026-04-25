@@ -9,6 +9,7 @@ import (
 	"image/jpeg"
 	_ "image/png"
 	"io"
+	"log/slog"
 	"net/http"
 	"os"
 	"strings"
@@ -113,6 +114,7 @@ type Model struct {
 
 // New creates a new preview Model.
 func New(host string, protocol Protocol) Model {
+	slog.Info("preview: New", "host", host, "protocol", protocol)
 	s := spinner.New(spinner.WithSpinner(spinner.Dot))
 	return Model{
 		host:     host,
@@ -133,6 +135,7 @@ func (m *Model) SetSize(w, h int) {
 
 // SetItem updates the currently-displayed item and triggers an async image fetch.
 func (m *Model) SetItem(id, title string, year int32, runtime string, rating float32, overview string) tea.Cmd {
+	slog.Info("preview: SetItem", "id", id, "title", title, "width", m.width, "height", m.height, "protocol", m.protocol)
 	m.itemID = id
 	m.title = title
 	m.year = year
@@ -186,6 +189,7 @@ func (m Model) imageURL() string {
 func (m Model) fetchImage() tea.Cmd {
 	url := m.imageURL()
 	itemID := m.itemID
+	slog.Info("preview: fetchImage", "url", url)
 	return func() tea.Msg {
 		client := &http.Client{Timeout: 10 * time.Second}
 		resp, err := client.Get(url)
@@ -211,6 +215,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		}
 	case ImageFetchedMsg:
 		if msg.ItemID == m.itemID {
+			slog.Info("preview: ImageFetchedMsg", "itemID", msg.ItemID, "dataLen", len(msg.ImgData), "err", msg.Err)
 			m.loading = false
 			m.imgData = msg.ImgData // may be nil on error — handled in View
 			m.cachedImgEsc = ""     // invalidate cache
@@ -371,8 +376,10 @@ func (m *Model) ImageOverlay(totalHeight, listW int) string {
 	// \x1b[nA = cursor up n rows
 	// \x1b[nG = cursor to column n (1-based)
 	// \x1b[nB = cursor down n rows
-	return fmt.Sprintf("\x1b7\x1b[%dA\x1b[%dG%s\x1b[%dB\x1b8",
+	result := fmt.Sprintf("\x1b7\x1b[%dA\x1b[%dG%s\x1b[%dB\x1b8",
 		up, imgCol, content, up)
+	slog.Info("preview: ImageOverlay", "totalHeight", totalHeight, "listW", listW, "imgCol", imgCol, "up", up, "escLen", len(result))
+	return result
 }
 
 // buildClearEsc returns an escape sequence that erases the old image area.
@@ -441,6 +448,7 @@ func (m *Model) buildImageEsc(cols, rows int) {
 	if err != nil {
 		img, err = jpeg.Decode(bytes.NewReader(m.imgData))
 		if err != nil {
+			slog.Info("preview: buildImageEsc decode error", "err", err)
 			return
 		}
 	}
@@ -448,6 +456,8 @@ func (m *Model) buildImageEsc(cols, rows int) {
 	// Scale image to fit the cell area (1 cell ≈ 8×16 px), maintaining aspect ratio.
 	targetW := cols * 8
 	targetH := rows * 16
+
+	slog.Info("preview: buildImageEsc", "cols", cols, "rows", rows, "targetW", targetW, "targetH", targetH, "protocol", m.protocol)
 
 	srcBounds := img.Bounds()
 	srcW := srcBounds.Max.X - srcBounds.Min.X

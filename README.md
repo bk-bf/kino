@@ -66,6 +66,20 @@ On first launch you will be prompted for your Jellyfin server URL, username, and
 | `?` | Help |
 | `q` | Quit |
 
+## Image Preview
+
+kino can display poster images in the inspector panel using terminal graphics protocols (Kitty, Sixel, or iTerm2). Set `preview.enabled: true` in the config file and optionally set `preview.protocol` (default: `auto`).
+
+### tmux
+
+The Kitty graphics protocol requires passthrough to be enabled in tmux (tmux ≥ 3.3). Add this to your tmux config:
+
+```
+set -g allow-passthrough on
+```
+
+Without this, images will silently not render when running inside tmux, even if the underlying terminal supports the Kitty protocol.
+
 ## Configuration
 
 Config is stored at `$XDG_CONFIG_HOME/kino/` (typically `~/.config/kino/`).
